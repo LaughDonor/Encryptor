@@ -1,14 +1,14 @@
 #!/bin/bash
-SCRIPT=`basename ${BASH_SOURCE[0]}`
+#Default variables. Change as necessary
 rootcert=certs/rootcert.pem
 output=sigtag.xml
-verify=false
-encrypt=false
 
-## Let's do some admin work to find out the variables to be used here
+SCRIPT=`basename ${BASH_SOURCE[0]}`
 BOLD='\e[1;31m'         # Bold Red
 REV='\e[1;32m'          # Bold Green
 OFF='\e[0m'
+verify=false
+encrypt=false
 
 #Usage function
 function HELP {
@@ -23,10 +23,7 @@ function HELP {
   exit 1
 }
 
-# In case you wanted to check what variables were passed
-# echo "flags = $*"
-
-while getopts :hvs:o: FLAG; do
+while getopts :hvs:o: FLAG; do									#Use getopts to parse arguments
 	case $FLAG in
 		o)
 			output=$OPTARG
@@ -53,40 +50,41 @@ while getopts :hvs:o: FLAG; do
 			;;
 	esac
 done
-shift $((OPTIND -1))
+shift $((OPTIND -1))											#Cleanup arguments after getopts
 xml=$1
 
-if [[ -z "$xml" ]]; then 
-    echo -e \\n"Missing ${BOLD}XMLFile${OFF} argument."\\n
+if [[ !-f "$xml" ]]; then										#Ensure that input file exists
+    echo -e \\n"Missing ${BOLD}XMLFile${OFF}."\\n
 	HELP
 fi
 
-if [[ -f $cert ]]; then
-	if ! grep -Fq "<Signature" "$xml"; then
+if [[ -f $cert ]]; then											#If Certificate is a file
+	if ! grep -Fq "<Signature" "$xml"; then						#If "<Signature" exists within XML input
 		xsltproc -o "$output" templates/signed.xsl "$xml"
-	else
+	else														#Start using output file
 		cp "$xml" "$output"
 	fi
 	xml=$output
-	read -s -p "Certificate Password: " certpass
+	read -s -p "Certificate Password: " certpass				#Request password to sign can be scripted in manually if needed
 	echo
-	errors=$(xmlsec1 --sign --pkcs12 $cert --trusted-pem $rootcert --crypto openssl --pwd "$certpass" --output "$xml" "$xml" 2>&1)
+	#Sign the file using the given the certificate. Shove any errors into variable for later processing
+	errors=$(xmlsec1 --sign --pkcs12 $cert --trusted-pem $rootcert --crypto openssl --pwd "$certpass" --output "$output" "$output" 2>&1)
 	if [ $output != "sigtag.xml" ]; then
 		cat "$xml"
 	fi
-elif [[ -n $cert ]]; then
+elif [[ -n $cert ]]; then										#If certificate is not a file
     echo -e "Certificate file ${BOLD}$cert ${OFF}not found." >&2
 	exit 1
 fi
 
-if [ -n "$errors" ]; then
+if [ -n "$errors" ]; then										#If Errors exist, print them, and don't continue
 	echo "$errors"
 else
-	if $verify; then
+	if $verify; then											#Verify file against root certificate 
 		xmlsec1 --verify --trusted-pem "$rootcert" "$xml"
 	fi
+fi
 
-	if [ $output = "sigtag.xml" ]; then
-		rm "$output"
-	fi
+if [ $output = "sigtag.xml" ]; then								#If the output variable is same as default, delete file
+	rm "$output"
 fi
